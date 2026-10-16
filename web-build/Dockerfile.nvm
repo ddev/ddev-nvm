@@ -3,10 +3,19 @@ RUN <<EOF
 set -eu -o pipefail
 
 # Install nvm globally first
-TMP_NVM_DIR=/tmp/nvm_install.sh
+TMP_NVM_DIR=/tmp/nvm_dir
+TMP_NVM_INSTALLER=/tmp/nvm_install.sh
 mkdir -p "${TMP_NVM_DIR}"
-LATEST_NVM_RELEASE="$(curl -L --fail --silent "https://api.github.com/repos/nvm-sh/nvm/releases/latest" | jq -r .tag_name)"
-curl --fail -sL "https://raw.githubusercontent.com/nvm-sh/nvm/${LATEST_NVM_RELEASE}/install.sh" | PROFILE=/dev/null NVM_DIR="${TMP_NVM_DIR}" bash
+# Resolve the latest tag from the release redirect to avoid the GitHub API rate limit
+NVM_RELEASE_URL="$(curl -fsSIL --retry 3 -o /dev/null -w '%{url_effective}' "https://github.com/nvm-sh/nvm/releases/latest")"
+LATEST_NVM_RELEASE="${NVM_RELEASE_URL##*/}"
+if [[ ! "${LATEST_NVM_RELEASE}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Unable to determine the latest nvm release from '${NVM_RELEASE_URL}'" >&2
+  exit 1
+fi
+curl -fsSL --retry 3 -o "${TMP_NVM_INSTALLER}" "https://raw.githubusercontent.com/nvm-sh/nvm/${LATEST_NVM_RELEASE}/install.sh"
+PROFILE=/dev/null NVM_DIR="${TMP_NVM_DIR}" bash "${TMP_NVM_INSTALLER}"
+rm -f "${TMP_NVM_INSTALLER}"
 
 # Create gzip-compressed tar of nvm and remove original for easier copying
 tar -C "${TMP_NVM_DIR}" -czf /usr/local/nvm.tar.gz . && rm -rf "${TMP_NVM_DIR}"
